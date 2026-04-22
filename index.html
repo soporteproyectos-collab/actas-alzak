@@ -96,6 +96,14 @@ nav{background:var(--white);border-bottom:3px solid var(--cyan);height:56px;disp
 .add{background:none;border:none;cursor:pointer;color:var(--cyan-d);font-size:11px;font-weight:600;padding:5px 8px;border-radius:4px}
 .add:hover{background:var(--cyan-xl)}
 
+/* FIRMA DIGITAL */
+.sig-wrap{display:flex;flex-direction:column;align-items:center;gap:3px;padding:2px 0}
+.sig-canvas{border:1px dashed var(--g300);border-radius:4px;cursor:crosshair;background:#fafafa;display:block;width:100%;max-width:160px;height:52px;touch-action:none}
+.sig-canvas:hover{border-color:var(--cyan);background:#f0fdfe}
+.sig-clr{background:none;border:none;cursor:pointer;color:var(--g300);font-size:10px;padding:1px 4px;border-radius:3px;line-height:1.4}
+.sig-clr:hover{color:#991B1B;background:#FEF2F2}
+@media print{.sig-clr{display:none!important}.sig-canvas{border:1px solid #ccc!important}}
+
 /* MODAL */
 .mbg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:center;justify-content:center}
 .mbg.show{display:flex}
@@ -206,7 +214,7 @@ nav{background:var(--white);border-bottom:3px solid var(--cyan);height:56px;disp
 
       <!-- ASISTENTES -->
       <tr><td colspan="7" class="sc">Asistentes <em>(Adicione o elimine filas según necesite)</em></td></tr>
-      <tr><th class="hd" colspan="3">Nombre completo</th><th class="hd" colspan="2">Cargo / Dependencia</th><th class="hd" colspan="2">Entidad / Empresa</th></tr>
+      <tr><th class="hd" colspan="2">Nombre completo</th><th class="hd" colspan="2">Cargo / Dependencia</th><th class="hd" colspan="2">Entidad / Empresa</th><th class="hd" colspan="1">Firma</th></tr>
       <tbody id="tb_a"></tbody>
       <tr><td colspan="7"><button class="add" onclick="addRow('a')">+ Agregar asistente</button></td></tr>
 
@@ -254,13 +262,13 @@ nav{background:var(--white);border-bottom:3px solid var(--cyan);height:56px;disp
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.umd.js"></script>
 <script>
 // ── CONSTANTES ──────────────────────────────────────────────
 const CO = 'ALZAK Group S.A.S';
 const SR = /\bSAC\b/g;
 const CFG = {
-  a:  { spans:[3,2,2] },
+  a:  { spans:[2,2,2,1] },
   o:  { spans:[1,4,2] },
   d:  { spans:[1,4,2] },
   c:  { spans:[3,2,2] },
@@ -498,10 +506,29 @@ function mkRow(key, data) {
       del.onclick = () => delRow(del);
       wrap.appendChild(del);
     }
-    const ce = document.createElement('div');
-    ce.contentEditable = true;
-    ce.textContent = cl(data[i] || '');
-    wrap.appendChild(ce);
+    // Columna Firma en asistentes (key='a', último índice)
+    if (key === 'a' && i === spans.length - 1) {
+      const sigWrap = document.createElement('div');
+      sigWrap.className = 'sig-wrap';
+      const canvas = document.createElement('canvas');
+      canvas.width  = 160;
+      canvas.height = 52;
+      canvas.className = 'sig-canvas';
+      canvas.title = 'Haz clic y arrastra para firmar';
+      initSig(canvas);
+      const clrBtn = document.createElement('button');
+      clrBtn.className = 'sig-clr';
+      clrBtn.textContent = '✕ Borrar';
+      clrBtn.onclick = () => clearSig(canvas);
+      sigWrap.appendChild(canvas);
+      sigWrap.appendChild(clrBtn);
+      wrap.appendChild(sigWrap);
+    } else {
+      const ce = document.createElement('div');
+      ce.contentEditable = true;
+      ce.textContent = cl(data[i] || '');
+      wrap.appendChild(ce);
+    }
     td.appendChild(wrap);
     tr.appendChild(td);
   });
@@ -520,6 +547,47 @@ function delRow(btn) {
   const tr    = btn.closest('tr');
   const tbody = tr.parentElement;
   if (tbody.querySelectorAll('tr').length > 1) tr.remove();
+}
+
+// ── FIRMA DIGITAL ────────────────────────────────────────────
+function initSig(canvas) {
+  const ctx = canvas.getContext('2d');
+  ctx.strokeStyle = '#1a1a2e';
+  ctx.lineWidth   = 1.8;
+  ctx.lineCap     = 'round';
+  ctx.lineJoin    = 'round';
+  let drawing = false, last = null;
+
+  function pos(e) {
+    const r = canvas.getBoundingClientRect();
+    const src = e.touches ? e.touches[0] : e;
+    return { x: (src.clientX - r.left) * (canvas.width / r.width),
+             y: (src.clientY - r.top)  * (canvas.height / r.height) };
+  }
+  function start(e) { e.preventDefault(); drawing = true; last = pos(e); }
+  function move(e)  {
+    if (!drawing) return; e.preventDefault();
+    const p = pos(e);
+    ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+    last = p;
+  }
+  function end() { drawing = false; last = null; }
+
+  canvas.addEventListener('mousedown',  start); canvas.addEventListener('mousemove',  move);
+  canvas.addEventListener('mouseup',    end);   canvas.addEventListener('mouseleave', end);
+  canvas.addEventListener('touchstart', start, { passive: false });
+  canvas.addEventListener('touchmove',  move,  { passive: false });
+  canvas.addEventListener('touchend',   end);
+}
+
+function clearSig(canvas) {
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function getSigDataURL(canvas) {
+  // Devuelve null si el canvas está vacío
+  const d = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+  return d.some(v => v !== 0) ? canvas.toDataURL('image/png') : null;
 }
 
 // ── STATUS ──────────────────────────────────────────────────
@@ -643,7 +711,7 @@ async function exportWord() {
 
     const tA = gt('a'), tO = gt('o'), tD = gt('d'), tC = gt('c'), tCC = gt('cc');
 
-    const At  = T([ SEC('Asistentes', 7),                      HDR(['Nombre completo', 'Cargo / Dependencia', 'Entidad / Empresa'], [3,2,2]),          ...tA.map(r  => ROW([r[0], r[1], r[2]], [3,2,2])) ]);
+    const At  = T([ SEC('Asistentes', 7),                      HDR(['Nombre completo', 'Cargo / Dependencia', 'Entidad / Empresa', 'Firma'], [2,2,2,1]),  ...tA.map(r  => ROW([r[0], r[1], r[2], ''], [2,2,2,1])) ]);
     const Ot  = T([ SEC('Orden del día', 7),                   HDR(['Ítem', 'Actividad', 'Responsable / Dirigente'], [1,4,2]),                         ...tO.map(r  => ROW([r[0], r[1], r[2]], [1,4,2])) ]);
     const Dt  = T([ SEC('Desarrollo del orden del día', 7),    HDR(['Ítem', 'Desarrollo de la actividad', 'Responsable / Dirigente'], [1,4,2]),         ...tD.map(r  => ROW([r[0], r[1], r[2]], [1,4,2])) ]);
     const Ct  = T([ SEC('Compromisos', 7),                     HDR(['Compromiso', 'Responsable', 'Fecha cumplimiento'], [3,2,2]),                       ...tC.map(r  => ROW([r[0], r[1], r[2]], [3,2,2])) ]);
@@ -657,8 +725,7 @@ async function exportWord() {
       page: { size: { width: 11906, height: 16838 }, margin: { top: 720, right: 720, bottom: 720, left: 720 } }
     }, children: [Ht, GAP(), It, GAP(), At, GAP(), Ot, GAP(), Dt, GAP(), Ct, GAP(), CCt] }] });
 
-    const buf  = await Packer.toBuffer(doc2);
-    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    const blob = await Packer.toBlob(doc2);
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     const fn   = gf('f_no').substring(0, 28).replace(/[\s\/\\:*?"<>|]/g, '_');
