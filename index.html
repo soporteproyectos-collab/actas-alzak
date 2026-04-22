@@ -371,17 +371,27 @@ async function buildContent(file) {
       { type: 'text', text: 'El documento son las notas de la reunión generadas por Gemini.' }
     ];
   }
-  // .docx — mammoth
+  // .docx — mammoth con fallback robusto
+  setSt('Extrayendo texto del archivo Word...', 'loading');
   try {
-    const mam = await loadMammoth();
-    const res = await mam.extractRawText({ arrayBuffer: await file.arrayBuffer() });
-    return [{ type: 'text', text: 'Notas de Gemini (.docx):\n\n' + res.value }];
-  } catch {
-    const b = await toB64(file);
-    return [
-      { type: 'document', source: { type: 'base64', media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data: b } },
-      { type: 'text', text: 'El documento son las notas de la reunión (.docx).' }
-    ];
+    const mam = await Promise.race([
+      loadMammoth(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
+    ]);
+    const ab = await file.arrayBuffer();
+    const res = await mam.extractRawText({ arrayBuffer: ab });
+    if (!res.value || res.value.trim().length < 30) throw new Error('vacío');
+    return [{ type: 'text', text: 'Notas de reunión (Word):\n\n' + res.value }];
+  } catch(e1) {
+    try {
+      const b = await toB64(file);
+      return [
+        { type: 'document', source: { type: 'base64', media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data: b } },
+        { type: 'text', text: 'El documento adjunto son las notas de la reunión en formato .docx. Extrae toda la información para generar el acta.' }
+      ];
+    } catch(e2) {
+      throw new Error('No se pudo leer el archivo. Guárdalo como .txt desde Word e inténtalo de nuevo.');
+    }
   }
 }
 
